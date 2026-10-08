@@ -365,6 +365,22 @@ describe('SCE', function() {
       it('should should match * and **', function() {
         expect(adjustMatcher('*://*.example.com/**').exec('http://www.example.com/path')).not.toBeNull();
       });
+
+      it('should fully anchor a regex containing a top-level alternation', function() {
+        // The alternation must be wrapped so that both anchors bind the whole
+        // pattern, not just the first/last branch (CVE-2026-11998).
+        var matcher = adjustMatcher(/foo|bar/);
+        expect(matcher.exec('foo')).not.toBeNull();
+        expect(matcher.exec('bar')).not.toBeNull();
+        // A prefix on the first branch must not match.
+        expect(matcher.exec('xfoo')).toBeNull();
+        // A suffix on the last branch must not match.
+        expect(matcher.exec('barx')).toBeNull();
+        // The first branch must be anchored at the end too.
+        expect(matcher.exec('foox')).toBeNull();
+        // The last branch must be anchored at the start too.
+        expect(matcher.exec('xbar')).toBeNull();
+      });
     });
 
     describe('regex matcher', function() {
@@ -398,6 +414,28 @@ describe('SCE', function() {
           // Prefix not allowed even though original regex does not contain a leading ^.
           expect(function() { $sce.getTrustedResourceUrl('xhttp://example.com/foo'); }).toThrowMinErr(
             '$sce', 'insecurl', 'Blocked loading resource from url not allowed by $sceDelegate policy.  URL: xhttp://example.com/foo');
+        }
+      ));
+
+      it('should not allow a bypass via a top-level alternation in the trusted resource URL list regex', runTest(
+        {
+          // A regex with a top-level alternation. Without wrapping the pattern in
+          // a non-capturing group, the leading "^" only binds the first branch and
+          // the trailing "$" only binds the last branch, so a URL that starts with
+          // the first branch (or ends with the last branch) but otherwise points
+          // anywhere would be wrongly allowed (CVE-2026-11998).
+          trustedUrls: [/https:\/\/good1\.example\.com\/|https:\/\/good2\.example\.com\//],
+          bannedUrls: []
+        }, function($sce) {
+          // Legitimate URLs still pass.
+          expect($sce.getTrustedResourceUrl('https://good1.example.com/')).toEqual('https://good1.example.com/');
+          expect($sce.getTrustedResourceUrl('https://good2.example.com/')).toEqual('https://good2.example.com/');
+          // A crafted URL that only prefix-matches the first branch must be blocked.
+          expect(function() { $sce.getTrustedResourceUrl('https://good1.example.com/foo@evil.com/'); }).toThrowMinErr(
+            '$sce', 'insecurl', 'Blocked loading resource from url not allowed by $sceDelegate policy.  URL: https://good1.example.com/foo@evil.com/');
+          // A crafted URL that only suffix-matches the last branch must be blocked.
+          expect(function() { $sce.getTrustedResourceUrl('https://evil.com/?https://good2.example.com/'); }).toThrowMinErr(
+            '$sce', 'insecurl', 'Blocked loading resource from url not allowed by $sceDelegate policy.  URL: https://evil.com/?https://good2.example.com/');
         }
       ));
     });
