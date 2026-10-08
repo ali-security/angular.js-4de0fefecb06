@@ -4175,7 +4175,7 @@ describe('$compile', function() {
       beforeEach(function() {
         module(function() {
           // Create directives that capture the `attr` object
-          ['input', 'a', 'img'].forEach(function(tag) {
+          ['input', 'a', 'img', 'source'].forEach(function(tag) {
             directive(tag, valueFn({
               restrict: 'ECA',
               link: function(scope, element, attr) {
@@ -4290,6 +4290,21 @@ describe('$compile', function() {
       it('should not accept trusted values for img[srcset]', inject(function($compile, $rootScope, $sce) {
         var trusted = $sce.trustAsMediaUrl('trustme:foo()');
         element = $compile('<img></img>')($rootScope);
+        expect(function() {
+          $rootScope.attr.$set('srcset', trusted);
+        }).toThrowMinErr('$compile', 'srcset', 'Can\'t pass trusted values to `$set(\'srcset\', value)`: "trustme:foo()"');
+      }));
+
+      it('should automatically sanitize source[srcset]', inject(function($compile, $rootScope) {
+        element = $compile('<source></source>')($rootScope);
+        $rootScope.attr.$set('srcset', 'evil:foo()');
+        expect(element.attr('srcset')).toEqual('unsafe:evil:foo()');
+        expect($rootScope.attr.srcset).toEqual('unsafe:evil:foo()');
+      }));
+
+      it('should not accept trusted values for source[srcset]', inject(function($compile, $rootScope, $sce) {
+        var trusted = $sce.trustAsMediaUrl('trustme:foo()');
+        element = $compile('<source></source>')($rootScope);
         expect(function() {
           $rootScope.attr.$set('srcset', trusted);
         }).toThrowMinErr('$compile', 'srcset', 'Can\'t pass trusted values to `$set(\'srcset\', value)`: "trustme:foo()"');
@@ -11618,6 +11633,89 @@ describe('$compile', function() {
         $rootScope.$digest();
         expect(element.attr('srcset')).toMatch(
             /^https:\/\/angularjs\.org\/favicon\.ico xyz,unsafe:data:image\/svg\+xml;base64,unsafe:/);
+      });
+    });
+  });
+
+  describe('source[srcset] sanitization', function() {
+    it('should NOT require trusted values for whitelisted values', inject(function($rootScope, $compile) {
+      element = $compile('<picture><source srcset="{{testUrl}}"></source></picture>')($rootScope);
+      $rootScope.testUrl = 'http://example.com/image.png'; // `http` is whitelisted
+      $rootScope.$digest();
+      expect(element.find('source').attr('srcset')).toEqual('http://example.com/image.png');
+    }));
+
+    it('should sanitize non-whitelisted values via interpolation', inject(function($rootScope, $compile) {
+      element = $compile('<picture><source srcset="{{testUrl}}"></source></picture>')($rootScope);
+      $rootScope.testUrl = 'javascript:alert(1)';
+      $rootScope.$digest();
+      expect(element.find('source').attr('srcset')).toMatch(/^unsafe:/);
+    }));
+
+    it('should automatically sanitize source[srcset] via $set', function() {
+      var linked = false;
+      module(function() {
+        directive('setter', valueFn(function(scope, elem, attrs) {
+          attrs.$set('srcset', 'evil:foo()');
+          expect(elem.attr('srcset')).toEqual('unsafe:evil:foo()');
+          expect(attrs.srcset).toEqual('unsafe:evil:foo()');
+          linked = true;
+        }));
+      });
+      inject(function($compile, $rootScope) {
+        element = $compile('<source setter></source>')($rootScope);
+        expect(linked).toBe(true);
+      });
+    });
+
+    it('should sanitize evil: urls via interpolation', inject(function($rootScope, $compile) {
+      element = $compile('<picture><source srcset="{{testUrl}}"></source></picture>')($rootScope);
+      $rootScope.testUrl = 'evil:foo()';
+      $rootScope.$digest();
+      expect(element.find('source').attr('srcset')).toMatch(/^unsafe:/);
+    }));
+
+    it('should sanitize multiple urls in srcset via $set', function() {
+      var linked = false;
+      module(function() {
+        directive('setter', valueFn(function(scope, elem, attrs) {
+          attrs.$set('srcset', 'javascript:alert(1),http://example.com/safe.png');
+          expect(attrs.srcset).toEqual('unsafe:javascript:alert(1),http://example.com/safe.png');
+          linked = true;
+        }));
+      });
+      inject(function($compile, $rootScope) {
+        element = $compile('<source setter></source>')($rootScope);
+        expect(linked).toBe(true);
+      });
+    });
+
+    it('should sanitize ng-attr-srcset on source elements', inject(function($rootScope, $compile) {
+      element = $compile('<picture><source ng-attr-srcset="{{testUrl}}"></source></picture>')($rootScope);
+      $rootScope.testUrl = 'javascript:alert(1)';
+      $rootScope.$digest();
+      expect(element.find('source').attr('srcset')).toMatch(/^unsafe:/);
+    }));
+
+    it('should sanitize ng-srcset on source elements', inject(function($rootScope, $compile) {
+      element = $compile('<picture><source ng-srcset="{{testUrl}}"></source></picture>')($rootScope);
+      $rootScope.testUrl = 'javascript:alert(1)';
+      $rootScope.$digest();
+      expect(element.find('source').attr('srcset')).toBe('unsafe:javascript:alert(1)');
+    }));
+
+    it('should allow safe urls via $set on source elements', function() {
+      var linked = false;
+      module(function() {
+        directive('setter', valueFn(function(scope, elem, attrs) {
+          attrs.$set('srcset', 'http://example.com/image.png 1x');
+          expect(attrs.srcset).toEqual('http://example.com/image.png 1x');
+          linked = true;
+        }));
+      });
+      inject(function($compile, $rootScope) {
+        element = $compile('<source setter></source>')($rootScope);
+        expect(linked).toBe(true);
       });
     });
   });
