@@ -438,7 +438,7 @@ describe('ngProp*', function() {
           $rootScope.testUrl = $sce.trustAsUrl('javascript:something');
           $rootScope.$digest();
           expect(element.prop('srcset')).toEqual(
-              'unsafe:javascript:something ,unsafe:javascript:something');
+              'unsafe:javascript:something,unsafe:javascript:something');
         }));
 
         it('should use $$sanitizeUri', function() {
@@ -456,12 +456,12 @@ describe('ngProp*', function() {
             element = $compile('<' + srcsetElement + ' ng-prop-srcset="testUrl + \',\' + testUrl"></' + srcsetElement + '>')($rootScope);
             $rootScope.testUrl = 'javascript:yay';
             $rootScope.$apply();
-            expect(element.prop('srcset')).toEqual('someSanitizedUrl ,someSanitizedUrl');
+            expect(element.prop('srcset')).toEqual('someSanitizedUrl,someSanitizedUrl');
 
             element = $compile('<' + srcsetElement + ' ng-prop-srcset="\'java\' + testUrl"></' + srcsetElement + '>')($rootScope);
             $rootScope.testUrl = 'script:yay, javascript:nay';
             $rootScope.$apply();
-            expect(element.prop('srcset')).toEqual('someSanitizedUrl ,someSanitizedUrl');
+            expect(element.prop('srcset')).toEqual('someSanitizedUrl,someSanitizedUrl');
           });
         });
 
@@ -475,21 +475,23 @@ describe('ngProp*', function() {
             'http://example.com/image.png 2x':'http://example.com/image.png 2x',
             'http://example.com/image.png 1.5x':'http://example.com/image.png 1.5x',
             'http://example.com/image1.png 1x,http://example.com/image2.png 2x':'http://example.com/image1.png 1x,http://example.com/image2.png 2x',
-            'http://example.com/image1.png 1x ,http://example.com/image2.png 2x':'http://example.com/image1.png 1x ,http://example.com/image2.png 2x',
+            'http://example.com/image1.png 1x ,http://example.com/image2.png 2x':'http://example.com/image1.png 1x,http://example.com/image2.png 2x',
             'http://example.com/image1.png 1x, http://example.com/image2.png 2x':'http://example.com/image1.png 1x,http://example.com/image2.png 2x',
-            'http://example.com/image1.png 1x , http://example.com/image2.png 2x':'http://example.com/image1.png 1x ,http://example.com/image2.png 2x',
+            'http://example.com/image1.png 1x , http://example.com/image2.png 2x':'http://example.com/image1.png 1x,http://example.com/image2.png 2x',
             'http://example.com/image1.png 48w,http://example.com/image2.png 64w':'http://example.com/image1.png 48w,http://example.com/image2.png 64w',
             //Test regex to make sure doesn't mistake parts of url for width descriptors
             'http://example.com/image1.png?w=48w,http://example.com/image2.png 64w':'http://example.com/image1.png?w=48w,http://example.com/image2.png 64w',
             'http://example.com/image1.png 1x,http://example.com/image2.png 64w':'http://example.com/image1.png 1x,http://example.com/image2.png 64w',
-            'http://example.com/image1.png,http://example.com/image2.png':'http://example.com/image1.png ,http://example.com/image2.png',
-            'http://example.com/image1.png ,http://example.com/image2.png':'http://example.com/image1.png ,http://example.com/image2.png',
-            'http://example.com/image1.png, http://example.com/image2.png':'http://example.com/image1.png ,http://example.com/image2.png',
-            'http://example.com/image1.png , http://example.com/image2.png':'http://example.com/image1.png ,http://example.com/image2.png',
+            'http://example.com/image1.png,http://example.com/image2.png':'http://example.com/image1.png,http://example.com/image2.png',
+            'http://example.com/image1.png ,http://example.com/image2.png':'http://example.com/image1.png,http://example.com/image2.png',
+            'http://example.com/image1.png, http://example.com/image2.png':'http://example.com/image1.png,http://example.com/image2.png',
+            'http://example.com/image1.png , http://example.com/image2.png':'http://example.com/image1.png,http://example.com/image2.png',
             'http://example.com/image1.png 1x, http://example.com/image2.png 2x, http://example.com/image3.png 3x':
               'http://example.com/image1.png 1x,http://example.com/image2.png 2x,http://example.com/image3.png 3x',
             'javascript:doEvilStuff() 2x': 'unsafe:javascript:doEvilStuff() 2x',
             'http://example.com/image1.png 1x,javascript:doEvilStuff() 2x':'http://example.com/image1.png 1x,unsafe:javascript:doEvilStuff() 2x',
+            //Test that an unexpected descriptor cannot hide the following uri from sanitization
+            'http://example.com/image1.png xyz,javascript:doEvilStuff()':'http://example.com/image1.png xyz,unsafe:javascript:doEvilStuff()',
             'http://example.com/image1.jpg?x=a,b 1x,http://example.com/ima,ge2.jpg 2x':'http://example.com/image1.jpg?x=a,b 1x,http://example.com/ima,ge2.jpg 2x',
             //Test regex to make sure doesn't mistake parts of url for pixel density descriptors
             'http://example.com/image1.jpg?x=a2x,b 1x,http://example.com/ima,ge2.jpg 2x':'http://example.com/image1.jpg?x=a2x,b 1x,http://example.com/ima,ge2.jpg 2x'
@@ -501,6 +503,25 @@ describe('ngProp*', function() {
             expect(element.prop('srcset')).toEqual(ref);
           });
         }));
+
+        it('should not let uris bypass the `imgSrcSanitizationTrustedUrlList` via an unexpected descriptor', function() {
+          module(function($compileProvider) {
+            $compileProvider.imgSrcSanitizationTrustedUrlList(/^\s*https:\/\/angularjs\.org\//);
+          });
+          inject(function($rootScope, $compile) {
+            var element = $compile('<' + srcsetElement + ' ng-prop-srcset="testUrl"></' + srcsetElement + '>')($rootScope);
+
+            $rootScope.testUrl = 'https://angularjs.org/favicon.ico xyz,https://angular.dev/favicon.ico';
+            $rootScope.$digest();
+            expect(element.prop('srcset')).toEqual(
+                'https://angularjs.org/favicon.ico xyz,unsafe:https://angular.dev/favicon.ico');
+
+            $rootScope.testUrl = 'https://angularjs.org/favicon.ico xyz,data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=';
+            $rootScope.$digest();
+            expect(element.prop('srcset')).toMatch(
+                /^https:\/\/angularjs\.org\/favicon\.ico xyz,unsafe:data:image\/svg\+xml;base64,unsafe:/);
+          });
+        });
       });
     }
   });

@@ -30,6 +30,41 @@ describe('ngSrcset', function() {
     expect(element.attr('srcset')).toBe('http://example.com/image1.png 1x,unsafe:javascript:doEvilStuff() 2x');
   }));
 
+  it('should sanitize evil url following an unexpected descriptor', inject(function($rootScope, $compile) {
+    $rootScope.imageUrl = 'http://example.com/image1.png xyz,javascript:doEvilStuff()';
+    element = $compile('<img ng-srcset="{{imageUrl}}">')($rootScope);
+    $rootScope.$digest();
+    expect(element.attr('srcset')).toBe('http://example.com/image1.png xyz,unsafe:javascript:doEvilStuff()');
+  }));
+
+  describe('with a restricted `imgSrcSanitizationTrustedUrlList`', function() {
+    beforeEach(module(function($compileProvider) {
+      $compileProvider.imgSrcSanitizationTrustedUrlList(/^\s*https:\/\/angularjs\.org\//);
+    }));
+
+    it('should not load images from other domains via ng-srcset', inject(function($rootScope, $compile) {
+      $rootScope.imageUrl = 'https://angularjs.org/favicon.ico xyz,https://angular.dev/favicon.ico';
+      element = $compile('<img ng-srcset="{{imageUrl}}">')($rootScope);
+      $rootScope.$digest();
+      expect(element.attr('srcset')).toBe('https://angularjs.org/favicon.ico xyz,unsafe:https://angular.dev/favicon.ico');
+    }));
+
+    it('should not load images from other domains via ng-attr-srcset', inject(function($rootScope, $compile) {
+      $rootScope.imageUrl = 'https://angularjs.org/favicon.ico xyz,https://angular.dev/favicon.ico';
+      element = $compile('<img ng-attr-srcset="{{imageUrl}}">')($rootScope);
+      $rootScope.$digest();
+      expect(element.attr('srcset')).toBe('https://angularjs.org/favicon.ico xyz,unsafe:https://angular.dev/favicon.ico');
+    }));
+
+    it('should not load data uri images via ng-srcset', inject(function($rootScope, $compile) {
+      $rootScope.imageUrl = 'https://angularjs.org/favicon.ico xyz,data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=';
+      element = $compile('<img ng-srcset="{{imageUrl}}">')($rootScope);
+      $rootScope.$digest();
+      expect(element.attr('srcset')).toMatch(
+          /^https:\/\/angularjs\.org\/favicon\.ico xyz,unsafe:data:image\/svg\+xml;base64,unsafe:/);
+    }));
+  });
+
   it('should not throw an error if undefined', inject(function($rootScope, $compile) {
     element = $compile('<img ng-attr-srcset="{{undefined}}">')($rootScope);
     $rootScope.$digest();
@@ -48,6 +83,10 @@ describe('ngSrcset', function() {
 
     dealoc(element);
   }));
+
+  // Run the following spec as a regular (non-focused) spec: a focused `fit` makes Jasmine
+  // silently skip every other spec in the whole test run.
+  var fit = it;
 
   fit('should not suffer from ReDoS when processing srcset with many spaces (CVE-2024-21490)DJWIODWJQOIJDWQOIJDWQOIJWQDOIJWQOJWOD', inject(function($rootScope, $compile) {
     var manySpaces = ' '.repeat(Math.pow(2, 20)); // 1000 spaces should be safe with the fix

@@ -2087,46 +2087,17 @@ function $CompileProvider($provide, $$sanitizeUriProvider) {
       }
       value = replaceExcessiveSpaces(value);
 
-      // Such values are a bit too complex to handle automatically inside $sce.
-      // Instead, we sanitize each of the URIs individually, which works, even dynamically.
-
-      // It's not possible to work around this using `$sce.trustAsMediaUrl`.
-      // If you want to programmatically set explicitly trusted unsafe URLs, you should use
-      // `$sce.trustAsHtml` on the whole `img` tag and inject it into the DOM using the
-      // `ng-bind-html` directive.
-
-      var result = '';
-
-      // first check if there are spaces because it's not the same pattern
-      var trimmedSrcset = trim(value);
-      //                (   999x   ,|   999w   ,|   ,|,   )
-      var srcPattern = /(\s+\d+x\s*,|\s+\d+w\s*,|\s+,|,\s+)/;
-      var pattern = /\s/.test(trimmedSrcset) ? srcPattern : /(,)/;
-
-      // split srcset into tuple of uri and descriptor except for the last item
-      var rawUris = trimmedSrcset.split(pattern);
-
-      // for each tuples
-      var nbrUrisWith2parts = Math.floor(rawUris.length / 2);
-      for (var i = 0; i < nbrUrisWith2parts; i++) {
-        var innerIdx = i * 2;
-        // sanitize the uri
-        result += $sce.getTrustedMediaUrl(trim(rawUris[innerIdx]));
-        // add the descriptor
-        result += ' ' + trim(rawUris[innerIdx + 1]);
+      var srcSetValues = value.split(',');
+      var sanitisedSrcSet = [];
+      for (var i = 0; i < srcSetValues.length; i++) {
+        var srcSetValue = srcSetValues[i];
+        var wellTrimmedSrcSetValue = srcSetValue.trim().replace(/\s{2,}/, ' ');
+        var srcSplit = wellTrimmedSrcSetValue.split(' ');
+        var uri = $sce.getTrustedMediaUrl(srcSplit[0]);
+        sanitisedSrcSet.push(uri + (srcSplit[1] !== undefined ? ' ' + srcSplit[1] : ''));
       }
 
-      // split the last item into uri and descriptor
-      var lastTuple = trim(rawUris[i * 2]).split(/\s/);
-
-      // sanitize the last uri
-      result += $sce.getTrustedMediaUrl(trim(lastTuple[0]));
-
-      // and add the last descriptor if any
-      if (lastTuple.length === 2) {
-        result += (' ' + trim(lastTuple[1]));
-      }
-      return result;
+      return sanitisedSrcSet.join(',');
     }
 
 
