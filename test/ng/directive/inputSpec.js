@@ -4777,6 +4777,18 @@ describe('input', function() {
 
 
   describe('url', function() {
+    it('CVE-2023-26118', function() {
+      var inputElm = helper.compileInput('<input type="url" ng-model="url" name="alias" />');
+      var widget = $rootScope.form.alias;
+
+      // timer for the function
+      const startTime = new Date();
+      helper.changeInputValueTo('schema:/'.repeat(262151));
+      const endTime = new Date();
+      const duration = endTime - startTime;
+      console.log(`Time taken: ${duration} milliseconds`);
+      expect(duration).toBeLessThan(1000);
+    });
 
     it('should validate url', function() {
       var inputElm = helper.compileInput('<input type="url" ng-model="url" name="alias" />');
