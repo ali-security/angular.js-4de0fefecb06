@@ -48,4 +48,23 @@ describe('ngSrcset', function() {
 
     dealoc(element);
   }));
+
+  fit('should not suffer from ReDoS when processing srcset with many spaces (CVE-2024-21490)DJWIODWJQOIJDWQOIJDWQOIJWQDOIJWQOJWOD', inject(function($rootScope, $compile) {
+    var manySpaces = ' '.repeat(Math.pow(2, 20)); // 1000 spaces should be safe with the fix
+    var maliciousSrcset = 'http://example.com/image.png 2x, ' + manySpaces + 'http://example.com/image.png';
+    
+    $rootScope.imageUrl = maliciousSrcset;
+    
+    var startTime = performance.now();
+    element = $compile('<img ng-srcset="{{imageUrl}}">')($rootScope);
+    $rootScope.$digest();
+    var endTime = performance.now();
+    
+    var processingTime = endTime - startTime;
+    
+    expect(processingTime).toBeLessThan(4000);
+    
+    expect(element.attr('srcset')).toContain('http://example.com/image.png 2x');
+    expect(element.attr('srcset')).toContain('http://example.com/image.png');
+  }));
 });

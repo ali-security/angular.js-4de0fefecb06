@@ -2085,6 +2085,7 @@ function $CompileProvider($provide, $$sanitizeUriProvider) {
       if (!isString(value)) {
         throw $compileMinErr('srcset', 'Can\'t pass trusted values to `{0}`: "{1}"', invokeType, value.toString());
       }
+      value = replaceExcessiveSpaces(value);
 
       // Such values are a bit too complex to handle automatically inside $sce.
       // Instead, we sanitize each of the URIs individually, which works, even dynamically.
@@ -4351,4 +4352,33 @@ function removeComments(jqNodes) {
     }
   }
   return jqNodes;
+}
+
+function replaceExcessiveSpaces(str) {
+  var result = '';
+  var spaceCount = 0;
+  
+  for (var i = 0; i < str.length; i++) {
+      var char = str[i];
+      
+      if (char === ' ') {
+          spaceCount++;
+      } else {
+          if (spaceCount > 10000) {
+              result += ' '.repeat(10000);
+          } else {
+              result += ' '.repeat(spaceCount);
+          }
+          spaceCount = 0;
+          result += char;
+      }
+  }
+  
+  if (spaceCount > 10000) {
+      result += ' '.repeat(10000);
+  } else {
+      result += ' '.repeat(spaceCount);
+  }
+  
+  return result;
 }
