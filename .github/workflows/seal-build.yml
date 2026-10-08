@@ -1,0 +1,113 @@
+name: seal-build
+
+on:
+  workflow_dispatch:
+    inputs:
+      test-filter:
+        description: "Jasmine spec-name grep for the jqLite unit suite; empty runs the full suite"
+        required: false
+        default: ""
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    env:
+      CI: "true"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "12.16.1"
+
+      - name: Tag HEAD as the v1.8.2 release
+        # lib/versions/version-info.js derives the build version from an annotated tag on HEAD
+        # (git describe --exact-match) carrying the release codename, as the release commit had.
+        run: |
+          git config user.email "seal-build@users.noreply.github.com"
+          git config user.name "seal-build"
+          git tag -f -a v1.8.2 -m "chore(release): v1.8.2 codename(meteoric-mining)"
+          git describe --exact-match
+
+      - name: Install release-era Chromium 86 for Karma
+        # The 1.8.2 datetime-local specs in test/ng/directive/inputSpec.js assert the
+        # millisecond-padded value Chrome produced in 2020; current Chrome normalizes it
+        # (drops trailing zeros), so the suite runs on the Chromium 86 branch-point snapshot.
+        # It runs headed (karma-shared.conf.js default `Chrome` launcher) on Xvfb: headless Chrome does not
+        # register the chrome-extension: scheme that AngularSpec's auto-bootstrap extension specs rely on.
+        run: |
+          Xvfb :99 -screen 0 1280x1024x24 > /dev/null 2>&1 &
+          echo "DISPLAY=:99" >> "$GITHUB_ENV"
+          curl -fsSL -o /tmp/chrome-linux.zip https://storage.googleapis.com/chromium-browser-snapshots/Linux_x64/800208/chrome-linux.zip
+          unzip -q /tmp/chrome-linux.zip -d "$RUNNER_TEMP"
+          printf '#!/bin/sh\nexec %s/chrome-linux/chrome --no-sandbox "$@"\n' "$RUNNER_TEMP" > "$RUNNER_TEMP/chrome-wrapper"
+          chmod +x "$RUNNER_TEMP/chrome-wrapper"
+          echo "CHROME_BIN=$RUNNER_TEMP/chrome-wrapper" >> "$GITHUB_ENV"
+          "$RUNNER_TEMP/chrome-linux/chrome" --version
+
+      - name: Toolchain versions
+        run: |
+          node --version
+          npm --version
+          yarn --version
+          java -version
+          "$CHROME_BIN" --version
+
+      - name: Install
+        run: yarn install --frozen-lockfile --non-interactive
+
+      - name: Build (grunt package)
+        run: yarn grunt package
+
+      - name: Test - promises-aplus
+        if: ${{ inputs.test-filter == '' }}
+        run: yarn grunt test:promises-aplus
+
+      - name: Test - jqLite unit tests
+        run: |
+          if [ -n "${{ inputs.test-filter }}" ]; then
+            yarn karma start karma-jqlite.conf.js --single-run=true --browsers=Chrome --reporters=spec -- --grep="${{ inputs.test-filter }}"
+          else
+            yarn grunt test:jqlite --browsers=Chrome --reporters=spec
+          fi
+
+      - name: Test - module unit tests
+        if: ${{ inputs.test-filter == '' }}
+        run: yarn grunt test:modules --browsers=Chrome --reporters=spec
+
+      - name: Test - docs unit tests
+        if: ${{ inputs.test-filter == '' }}
+        run: yarn grunt test:docs --browsers=Chrome --reporters=spec
+
+      - name: Test - jQuery unit tests
+        if: ${{ inputs.test-filter == '' }}
+        run: |
+          yarn grunt test:jquery --browsers=Chrome --reporters=spec
+          yarn grunt test:jquery-2.2 --browsers=Chrome --reporters=spec
+          yarn grunt test:jquery-2.1 --browsers=Chrome --reporters=spec
+
+      - name: Pack npm tarball (scripts/bower/publish.sh flow)
+        # Upstream publishes the npm package from the angular/bower-angular repo: publish.sh clones it,
+        # copies build/angular.* and build/angular-csp.css over it, bumps the versions, and runs npm publish.
+        # The clone is taken at v1.8.1, the state of bower-angular master when v1.8.2 was published.
+        run: |
+          NEW_VERSION=$(cat build/version.txt)
+          echo "Packing angular $NEW_VERSION"
+          rm -rf tmp/bower-angular
+          git clone https://github.com/angular/bower-angular.git tmp/bower-angular --depth=1 --branch v1.8.1
+          cp build/angular.* tmp/bower-angular/
+          cp build/angular-csp.css tmp/bower-angular/
+          cd tmp/bower-angular
+          sed -i -E "s/(\"version\": \")[^\"]*(\")/\1${NEW_VERSION}\2/" bower.json package.json
+          git status --short
+          mkdir -p ../../seal-dist
+          npm pack
+          mv angular-*.tgz ../../seal-dist/
+          tar tzvf ../../seal-dist/angular-*.tgz
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: angular-npm-tarball
+          path: seal-dist/angular-*.tgz
+          if-no-files-found: error
