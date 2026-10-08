@@ -68,15 +68,62 @@ function currencyFilter($locale) {
       fractionSize = formats.PATTERNS[1].maxFrac;
     }
 
-    // If the currency symbol is empty, trim whitespace around the symbol
-    var currencySymbolRe = !currencySymbol ? /\s*\u00A4\s*/g : /\u00A4/g;
-
     // if null or undefined pass it through
-    return (amount == null)
-        ? amount
-        : formatNumber(amount, formats.PATTERNS[1], formats.GROUP_SEP, formats.DECIMAL_SEP, fractionSize).
-            replace(currencySymbolRe, currencySymbol);
+    if (amount == null) {
+      return amount;
+    }
+
+    var formattedNumber = formatNumber(amount, formats.PATTERNS[1], formats.GROUP_SEP, formats.DECIMAL_SEP, fractionSize);
+
+    // If the currency symbol is empty, trim whitespace around the symbol
+    return currencySymbol ?
+        formattedNumber.replace(/\u00A4/g, currencySymbol) :
+        replaceCurrencySymbolTrimmingWhitespace(formattedNumber, currencySymbol);
   };
+}
+
+var WHITESPACE_CHAR_REGEXP = /\s/;
+
+/**
+ * Replaces every currency symbol placeholder (`\u00A4`) in `text` with `replacement`, removing any
+ * whitespace around the placeholders.
+ *
+ * This is equivalent to replacing the regular expression `\s*\u00A4\s*` (globally) with `replacement`,
+ * but runs in linear time. That regular expression is vulnerable to ReDoS (quadratic backtracking on
+ * long runs of whitespace in the locale's currency pattern) - see https://www.cve.org/CVERecord?id=CVE-2022-25844
+ */
+function replaceCurrencySymbolTrimmingWhitespace(text, replacement) {
+  // Validate if currency symbol whitespace trimming is required by checking for the currency symbol first
+  if (text.indexOf('\u00A4') === -1) return text;
+
+  var parts = text.split('\u00A4');
+  var lastIndex = parts.length - 1;
+  var result = '';
+
+  for (var i = 0; i <= lastIndex; i++) {
+    var part = parts[i];
+    var start = 0;
+    var end = part.length;
+
+    if (i > 0) {
+      // Trim the whitespace following the previous currency symbol and replace that symbol
+      while (start < end && WHITESPACE_CHAR_REGEXP.test(part.charAt(start))) {
+        start++;
+      }
+      result += replacement;
+    }
+
+    if (i < lastIndex) {
+      // Trim the whitespace preceding the next currency symbol
+      while (end > start && WHITESPACE_CHAR_REGEXP.test(part.charAt(end - 1))) {
+        end--;
+      }
+    }
+
+    result += part.substring(start, end);
+  }
+
+  return result;
 }
 
 /**

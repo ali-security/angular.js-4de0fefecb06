@@ -199,6 +199,45 @@ describe('filters', function() {
         expect(currency(-1.07, '')).toBe('  --  1.07  --  ');
       })
     );
+
+    it('should trim any whitespace around every currency symbol if it is empty',
+      inject(function($locale) {
+        var pattern = $locale.NUMBER_FORMATS.PATTERNS[1];
+        pattern.posPre = 'a  ¤ \t';
+        pattern.posSuf = '  ¤\n ¤  b  ¤';
+        pattern.negPre = '  -  ';
+        pattern.negSuf = '  ¤¤  ';
+
+        expect(currency(+1.07, '$')).toBe('a  $ \t1.07  $\n $  b  $');
+        expect(currency(-1.07, '$')).toBe('  -  1.07  $$  ');
+        expect(currency(+1.07, '')).toBe('a1.07b');
+        expect(currency(-1.07, '')).toBe('  -  1.07');
+      })
+    );
+
+    it('should not suffer from ReDoS when trimming whitespace around an empty currency symbol (CVE-2022-25844)',
+      inject(function($locale) {
+        var manySpaces = new Array(Math.pow(2, 16) + 1).join(' ');
+        var pattern = $locale.NUMBER_FORMATS.PATTERNS[1];
+        // Long runs of whitespace that are not followed by the currency symbol
+        pattern.posPre = manySpaces;
+        pattern.posSuf = manySpaces + '¤' + manySpaces + 'x';
+        pattern.negPre = '-' + manySpaces;
+        pattern.negSuf = manySpaces;
+
+        var startTime = performance.now();
+        var positive = currency(+1.07, '');
+        var negative = currency(-1.07, '');
+        var processingTime = performance.now() - startTime;
+
+        expect(processingTime).toBeLessThan(1000);
+
+        expect(positive.length).toBe(manySpaces.length + 5);
+        expect(positive === manySpaces + '1.07x').toBe(true);
+        expect(negative.length).toBe(2 * manySpaces.length + 5);
+        expect(negative === '-' + manySpaces + '1.07' + manySpaces).toBe(true);
+      })
+    );
   });
 
   describe('number', function() {
